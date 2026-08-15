@@ -1,69 +1,87 @@
-# Prerequisites
-*.d
+# ---------- Build output ----------
+build/
+build-*/
+cmake-build-*/
+out/
+install/
 
-# Compiled Object files
-*.slo
-*.lo
+# CMake / CTest generated
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+install_manifest.txt
+_deps/
+
+# Compilation databases & tooling caches
+compile_commands.json
+.cache/
+.clangd/
+
+# ---------- Binaries & object files ----------
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
 *.a
 *.lib
-
-# Executables
+*.so
+*.so.*
+*.dylib
+*.dll
 *.exe
-*.out
-*.app
+*.gch
+*.pch
+*.d
 
-# Build directories
-build/
-Build/
-build-*/
+# Core dumps
+core
+core.*
+vgcore.*
 
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
+# ---------- Generated market data ----------
+data/*
+!data/small_example.csv
+!data/.gitkeep
+*.bin
+events*.csv
 
-# Temporary files
-*.tmp
-*.log
-*.bak
+# ---------- Benchmark / profiling artifacts ----------
+perf.data
+perf.data.old
+perf.*.map
+flamegraph.svg
+callgrind.out.*
+massif.out.*
+gmon.out
+bench-out/
+*.bench.json
+*.bench.csv
+
+# Sanitizer logs
+asan.log*
+ubsan.log*
+tsan.log*
+
+# ---------- Editors / IDE ----------
+.vscode/*
+!.vscode/extensions.json
+.vs/
+.idea/
 *.swp
+*.swo
+*~
+tags
+.ccls-cache/
 
-# vcpkg
-vcpkg_installed/
-
-# debug information files
-*.dwo
-
-# test output & cache
-Testing/
-.cache/
+# ---------- OS cruft ----------
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini

@@ -1,0 +1,58 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Host build trees
+build/
+build-*/
+cmake-build-*/
+out/
+install/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/CMakeUserPresets.json
+**/_deps/
+**/compile_commands.json
+**/.cache/
+
+# Compiled artifacts
+**/*.o
+**/*.a
+**/*.so
+**/*.so.*
+**/*.dylib
+**/*.exe
+core
+core.*
+vgcore.*
+
+# Generated datasets
+data/*
+!data/small_example.csv
+**/*.bin
+
+# Benchmark / profiling output
+perf.data
+perf.data.old
+flamegraph.svg
+callgrind.out.*
+massif.out.*
+bench-out/
+
+# Docs and dev environment
+docs/
+README.md
+.devcontainer/
+Dockerfile
+.dockerignore
+
+# Editors / OS
+.vscode/
+.idea/
+**/*.swp
+**/*~
+**/.DS_Store
+**/._*
+Thumbs.db

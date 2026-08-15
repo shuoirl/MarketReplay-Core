@@ -1,0 +1,21 @@
+{
+  "name": "C++ Docker Dev",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "options": [
+      "--tag", "pagecache-dev:latest"
+    ]
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "remote.autoForwardPorts": false
+      },
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "matepek.vscode-catch2-test-adapter"
+      ]
+    }
+  }
+}
