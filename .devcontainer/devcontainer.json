@@ -3,7 +3,7 @@
   "build": {
     "dockerfile": "../Dockerfile",
     "options": [
-      "--tag", "pagecache-dev:latest"
+      "--tag", "marketreplay-dev:latest"
     ]
   },
   "customizations": {
