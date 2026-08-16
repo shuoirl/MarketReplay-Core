@@ -1,20 +1,68 @@
 {
-  "name": "C++ Docker Dev",
+  "name": "MarketReplay-Core",
+
   "build": {
     "dockerfile": "../Dockerfile",
-    "options": [
-      "--tag", "marketreplay-dev:latest"
-    ]
+    "target": "dev",
+    "args": {
+      "USER_UID": "1000",
+      "USER_GID": "1000"
+    },
+    "options": ["--tag", "marketreplay-dev:latest"]
   },
+
+  "remoteUser": "dev",
+  "workspaceFolder": "/workspace",
+
+  // This container is for correctness work only. On arm64 the build configures
+  // with MR_HAS_RDTSC=0, so cycle-level latency sampling is unavailable and
+  // MR_MEASUREMENT_BUILD=ON will fail by design. Numbers come from the x86-64
+  // host instead.
+  "containerEnv": {
+    "MR_HOST_ROLE": "dev"
+  },
+
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  // SYS_PTRACE for gdb; unconfined seccomp so AddressSanitizer can set up its
+  // shadow memory mapping on some Docker versions.
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt", "seccomp=unconfined"
+  ],
+
   "customizations": {
     "vscode": {
       "settings": {
-        "remote.autoForwardPorts": false
+        "remote.autoForwardPorts": false,
+
+        // Matches CMAKE_GENERATOR=Ninja set in the image.
+        "cmake.generator": "Ninja",
+        "cmake.buildDirectory": "${workspaceFolder}/build",
+
+        // clangd is the single source of diagnostics; cpptools is kept only
+        // for its debugger. Running both IntelliSense engines conflicts.
+        "C_Cpp.intelliSenseEngine": "disabled",
+        "clangd.arguments": [
+          "--compile-commands-dir=${workspaceFolder}/build",
+          "--background-index",
+          "--clang-tidy",
+          "--header-insertion=never"
+        ],
+
+        // Schema downloads reach raw.githubusercontent.com, which is
+        // unreliable here and provides editor autocomplete only.
+        "json.schemaDownload.enable": false,
+
+        "files.eol": "\n",
+        "editor.formatOnSave": false,
+        "C_Cpp.debugShortcut": true
       },
+
       "extensions": [
         "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
-        "matepek.vscode-catch2-test-adapter"
+        "llvm-vs-code-extensions.vscode-clangd"
       ]
     }
   }
