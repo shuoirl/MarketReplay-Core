@@ -63,6 +63,11 @@ option(MR_ENABLE_LTO         "Enable interprocedural optimization"     OFF)
 option(MR_KEEP_FRAME_POINTER "Keep frame pointers (needed for usable perf/ASan stacks)" ON)
 option(MR_BENCH_SMOKE_TESTS  "Register tiny benchmark runs as ctest smoke tests" OFF)
 
+# Set ON only on the machine that produces published numbers. It turns the
+# preconditions for a trustworthy measurement into configure-time errors,
+# rather than something noticed halfway through writing up results.
+option(MR_MEASUREMENT_BUILD  "Configure as a measurement host (enforces preconditions)" OFF)
+
 set(MR_SANITIZER "none" CACHE STRING
     "Sanitizer: none | address | undefined | address+undefined | thread")
 set_property(CACHE MR_SANITIZER PROPERTY STRINGS
@@ -168,6 +173,41 @@ endif()
 target_compile_definitions(mr_project_options INTERFACE
     MR_SANITIZED_BUILD=${MR_SANITIZED_BUILD})
 
+# --- Measurement-host preconditions -------------------------------------------
+# Development and measurement happen on different machines. Everything below is
+# a property the measuring machine must have for its output to mean anything;
+# failing here is far cheaper than discovering it in a results table.
+if(MR_MEASUREMENT_BUILD)
+    if(NOT MR_HAS_RDTSC)
+        message(FATAL_ERROR
+            "MR_MEASUREMENT_BUILD=ON but the host is '${CMAKE_SYSTEM_PROCESSOR}'. "
+            "Cycle-level sampling needs x86-64 rdtsc/rdtscp; there is no "
+            "equivalent here. Configure without MR_MEASUREMENT_BUILD for "
+            "development, and measure on an x86-64 host.")
+    endif()
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR
+            "MR_MEASUREMENT_BUILD=ON requires Linux (thread affinity, "
+            "page-cache control). Host is ${CMAKE_SYSTEM_NAME}.")
+    endif()
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(FATAL_ERROR
+            "MR_MEASUREMENT_BUILD=ON requires CMAKE_BUILD_TYPE=Release, "
+            "not '${CMAKE_BUILD_TYPE}'.")
+    endif()
+    if(MR_SANITIZED_BUILD)
+        message(FATAL_ERROR
+            "MR_MEASUREMENT_BUILD=ON is incompatible with MR_SANITIZER="
+            "${MR_SANITIZER}. Instrumented timings are not measurements.")
+    endif()
+    if(NOT MR_BUILD_BENCH)
+        message(FATAL_ERROR "MR_MEASUREMENT_BUILD=ON with MR_BUILD_BENCH=OFF.")
+    endif()
+endif()
+
+target_compile_definitions(mr_project_options INTERFACE
+    MR_MEASUREMENT_BUILD=$<BOOL:${MR_MEASUREMENT_BUILD}>)
+
 # --- Warnings -----------------------------------------------------------------
 add_library(mr_warnings INTERFACE)
 add_library(mr::warnings ALIAS mr_warnings)
@@ -237,7 +277,14 @@ inline constexpr const char* march_setting   = "@MR_MARCH_SETTING@";
 inline constexpr const char* sanitizer       = "@MR_SANITIZER@";
 inline constexpr bool        sanitized       = (@MR_SANITIZED_BUILD@ != 0);
 inline constexpr bool        lto             = (@MR_ENABLE_LTO@ ? true : false);
+inline constexpr const char* host_arch       = "@CMAKE_SYSTEM_PROCESSOR@";
+inline constexpr const char* host_os         = "@CMAKE_SYSTEM_NAME@";
 inline constexpr bool        has_rdtsc       = (@MR_HAS_RDTSC@ != 0);
+
+// False unless this build was configured on a host that passed every
+// measurement precondition. Benchmarks must print a banner when it is false —
+// a plausible-looking number from a dev machine is worse than no number.
+inline constexpr bool        measurement_grade = (@MR_MEASUREMENT_BUILD@ ? true : false);
 
 } // namespace mr::build_info
 ]==])
@@ -384,6 +431,35 @@ if(MR_BUILD_BENCH)
 endif()
 
 # -----------------------------------------------------------------------------
+# bench-env — dump the host facts that every published number must be paired
+# with. Run on the measuring machine and paste the output next to the results.
+# Anything the host will not tell us prints as 'unknown' rather than being
+# quietly omitted.
+# -----------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_custom_target(bench-env
+        VERBATIM
+        COMMAND bash -c "
+            echo '--- host -------------------------------------------------';
+            uname -srmo;
+            echo \"cpu model     : $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs || echo unknown)\";
+            echo \"logical cpus  : $(nproc --all)\";
+            echo \"online cpus   : $(nproc)\";
+            echo \"physical cores: $(lscpu 2>/dev/null | awk -F: '/^Core\\\\(s\\\\) per socket/{c=\$2} /^Socket\\\\(s\\\\)/{s=\$2} END{if(c&&s) print c*s; else print \\\"unknown\\\"}' | xargs)\";
+            echo \"SMT           : $(cat /sys/devices/system/cpu/smt/active 2>/dev/null || echo unknown)\";
+            echo \"L1d line size : $(getconf LEVEL1_DCACHE_LINESIZE 2>/dev/null || echo unknown) bytes\";
+            echo \"RAM           : $(grep MemTotal /proc/meminfo | awk '{print \$2/1048576 \\\" GiB\\\"}' || echo unknown)\";
+            echo \"governor      : $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo unknown)\";
+            echo \"turbo/boost   : $(cat /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null && echo '(intel_pstate no_turbo)' || cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || echo unknown)\";
+            echo \"THP           : $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo unknown)\";
+            echo \"virtualized   : $(systemd-detect-virt 2>/dev/null || echo unknown)\";
+            echo '--- build ------------------------------------------------';
+            echo 'see the configuration summary above, or mr::build_info';
+        "
+        COMMENT "Collecting benchmark environment")
+endif()
+
+# -----------------------------------------------------------------------------
 # Configuration summary — record this alongside any published measurement
 # -----------------------------------------------------------------------------
 message(STATUS "")
@@ -396,9 +472,19 @@ message(STATUS "  -march            : ${MR_MARCH_SETTING}")
 message(STATUS "  LTO               : ${MR_ENABLE_LTO}")
 message(STATUS "  frame pointers    : ${MR_KEEP_FRAME_POINTER}")
 message(STATUS "  sanitizer         : ${MR_SANITIZER}")
+message(STATUS "  host              : ${CMAKE_SYSTEM_NAME} / ${CMAKE_SYSTEM_PROCESSOR}")
 message(STATUS "  rdtsc available   : ${MR_HAS_RDTSC}")
 message(STATUS "  tests / bench     : ${MR_BUILD_TESTS} / ${MR_BUILD_BENCH}")
 message(STATUS "  warnings as errors: ${MR_WARNINGS_AS_ERRORS}")
 message(STATUS "  concurrency       : none built (single-threaded replay only)")
+if(MR_MEASUREMENT_BUILD)
+    message(STATUS "  measurement build : YES — output is publishable")
+else()
+    message(STATUS "  measurement build : no — development configuration")
+    if(NOT MR_HAS_RDTSC)
+        message(STATUS "                      (no rdtsc here: latency sampling unavailable,")
+        message(STATUS "                       throughput via steady_clock only)")
+    endif()
+endif()
 message(STATUS "=============================================================")
 message(STATUS "")
