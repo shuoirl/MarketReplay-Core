@@ -20,6 +20,20 @@
 #   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 #   ctest --test-dir build --output-on-failure
 #
+# GIT OVER SSH
+#   No key material is baked into the image. To push from inside the container,
+#   forward the host's SSH agent and mount known_hosts read-only:
+#     Linux:
+#       -v "$SSH_AUTH_SOCK":/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent \
+#       -v "$HOME/.ssh/known_hosts":/home/dev/.ssh/known_hosts:ro
+#     macOS (Docker Desktop):
+#       -v /run/host-services/ssh-auth.sock:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent \
+#       -v "$HOME/.ssh/known_hosts":/home/dev/.ssh/known_hosts:ro
+#   Without known_hosts, the first push stalls on an interactive host-key
+#   prompt; alternatively run `ssh-keyscan github.com >> ~/.ssh/known_hosts`
+#   inside the container. Pushing from the host instead works just as well —
+#   the bind-mounted tree is the same working tree.
+#
 # Clean-checkout verification (builds + runs the full matrix at image build time):
 #   docker build --target ci -t marketreplay:ci .
 #
@@ -46,6 +60,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     TZ=UTC
 
+# Optional package mirror, e.g. --build-arg APT_MIRROR=mirrors.ustc.edu.cn
+# Left empty by default so the image builds identically anywhere. Kept on http:
+# the base image has no ca-certificates yet at this point.
+ARG APT_MIRROR=
+RUN if [ -n "${APT_MIRROR}" ]; then \
+        sed -i \
+          -e "s|http://archive.ubuntu.com/ubuntu|http://${APT_MIRROR}/ubuntu|g" \
+          -e "s|http://security.ubuntu.com/ubuntu|http://${APT_MIRROR}/ubuntu|g" \
+          -e "s|http://ports.ubuntu.com/ubuntu-ports|http://${APT_MIRROR}/ubuntu-ports|g" \
+          /etc/apt/sources.list.d/ubuntu.sources ; \
+    fi
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         g++-${GCC_VERSION} \
@@ -56,6 +82,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
         git \
         ca-certificates \
+        openssh-client \
         python3 \
         gdb \
         libc6-dbg \
@@ -144,4 +171,34 @@ RUN cmake -S . -B build-asan \
  && cmake --build build-asan -j"$(nproc)" \
  && ctest --test-dir build-asan --output-on-failure --timeout 1800
 
+CMD ["/bin/bash"]
+
+# -----------------------------------------------------------------------------
+# bench — measurement image, for the x86-64 Linux host only
+#
+# MR_MEASUREMENT_BUILD=ON makes the configure step fail unless the host can
+# actually produce trustworthy numbers, so this stage cannot be built on an
+# arm64 machine or in a non-Release configuration.
+#
+#   docker build --target bench -t marketreplay:bench .
+#   docker run --rm -it --cpuset-cpus=2,3 marketreplay:bench
+#   > taskset -c 2 ./bin/bench_book
+#
+# The container shares the host scheduler and page cache. That is acceptable on
+# a dedicated box, but record that the run was containerised — or build on the
+# host directly and remove one layer from the story.
+# -----------------------------------------------------------------------------
+FROM base AS bench
+
+WORKDIR /src
+COPY . /src
+
+RUN cmake -S . -B build-bench \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DMR_MEASUREMENT_BUILD=ON \
+        -DMR_NATIVE_ARCH=ON \
+ && cmake --build build-bench -j"$(nproc)" \
+ && ctest --test-dir build-bench --output-on-failure --timeout 900
+
+WORKDIR /src/build-bench
 CMD ["/bin/bash"]
